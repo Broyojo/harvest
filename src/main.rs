@@ -1,5 +1,6 @@
 use bevy::{
     prelude::*,
+    // sprite::collide_aabb::{collide, Collision},
     window::{PresentMode, WindowResized},
 };
 
@@ -10,8 +11,8 @@ fn main() {
         .add_plugins(DefaultPlugins.set(WindowPlugin {
             window: WindowDescriptor {
                 title: String::from("Harvest Game"),
-                width: 1920.0,
-                height: 1080.0,
+                width: 1280.0,
+                height: 720.0,
                 present_mode: PresentMode::AutoVsync,
                 ..default()
             },
@@ -30,24 +31,23 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, windows: Res<Wi
     let player_texture = asset_server.load("player.png");
     let floor_texture = asset_server.load("ohno.png");
 
-    let w = window.width() / 16.0;
-    let h = window.height() / 9.0;
+    let size = window.width() / 16.0;
 
-    let tiles = (0..9)
+    let tiles: Vec<Vec<Tile>> = (0..9)
         .map(|row| {
             (0..16)
                 .map(|col| Tile {
                     floor: commands
                         .spawn(SpriteBundle {
                             sprite: Sprite {
-                                custom_size: Some(Vec2 { x: w, y: h }),
+                                custom_size: Some(Vec2::new(size, size)),
                                 ..default()
                             },
                             texture: floor_texture.clone(),
                             transform: Transform {
                                 translation: Vec3::new(
-                                    w * (col as f32 - 7.5),
-                                    h * (row - 4) as f32,
+                                    size * (col as f32 - 7.5),
+                                    size * (row - 4) as f32,
                                     0.0,
                                 ),
                                 ..default()
@@ -55,7 +55,24 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, windows: Res<Wi
                             ..default()
                         })
                         .id(),
-                    block: commands.spawn(SpriteBundle { ..default() }).id(),
+                    block: commands
+                        .spawn(SpriteBundle {
+                            sprite: Sprite {
+                                custom_size: Some(Vec2::new(size, size)),
+                                ..default()
+                            },
+                            transform: Transform {
+                                translation: Vec3::new(
+                                    size * (col as f32 - 7.5),
+                                    size * (row - 4) as f32,
+                                    1.0,
+                                ),
+                                ..default()
+                            },
+                            visibility: Visibility::INVISIBLE,
+                            ..default()
+                        })
+                        .id(),
                 })
                 .collect()
         })
@@ -66,7 +83,7 @@ fn setup(mut commands: Commands, asset_server: Res<AssetServer>, windows: Res<Wi
     commands
         .spawn(SpriteBundle {
             sprite: Sprite {
-                custom_size: Some(Vec2 { x: w, y: h }),
+                custom_size: Some(Vec2::new(size, size)),
                 ..default()
             },
             texture: player_texture,
@@ -102,6 +119,35 @@ fn player_movement(mut query: Query<&mut Velocity, With<Player>>, keys: Res<Inpu
     }
 }
 
+fn place_blocks(
+    // mut query: Query<(&Transform, &Sprite, &mut Handle<Image>), With<Block>>,
+    mut commands: Commands,
+    asset_server: Res<AssetServer>,
+    game: Res<Game>,
+    windows: Res<Windows>,
+    mouse: Res<Input<MouseButton>>,
+) {
+    if mouse.pressed(MouseButton::Left) {
+        let window = windows.primary();
+
+        if let Some(pos) = window.cursor_position() {
+            let texture: Handle<Image> = asset_server.load("player.png");
+            let size = window.width() / 16.0;
+            let row = (pos.y / size) as usize;
+            let col = (pos.x / size) as usize;
+
+            if row >= game.tiles.len() || col >= game.tiles[0].len() {
+                return;
+            } 
+
+            commands
+                .entity(game.tiles[row][col].block)
+                .insert(texture)
+                .insert(Visibility::VISIBLE);
+        }
+    }
+}
+
 fn damping_system(mut query: Query<(&mut Velocity, &Damping)>) {
     for (mut velocity, damping) in query.iter_mut() {
         if velocity.0.length() > BASICALLY_ZERO {
@@ -123,6 +169,12 @@ fn velocity_system(mut query: Query<(&mut Transform, &Velocity)>) {
 // enum BlockType {
 //     Air,
 // }
+
+// #[derive(Component)]
+// struct Floor(FloorType);
+
+// #[derive(Component)]
+// struct Block(BlockType);
 
 #[derive(Component)]
 struct Player;
@@ -153,6 +205,7 @@ impl Plugin for GamePlugin {
     fn build(&self, app: &mut App) {
         app.add_startup_system(setup)
             .add_system(player_movement)
+            .add_system(place_blocks)
             .add_system(velocity_system)
             .add_system(damping_system);
     }
